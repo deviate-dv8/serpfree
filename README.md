@@ -1,2 +1,56 @@
 # serpfree
-An opensource SERPAPI alternative
+
+An opensource SERPAPI alternative.
+
+## Features
+
+- Query search engine results programmatically.
+- Supports multiple providers:
+  - Google
+  - Bing
+  - DuckDuckGo
+  - Yahoo
+- Lightweight and easy to integrate into your projects.
+
+## Installation
+
+Fork the repository and run:
+
+```bash
+git clone https://github.com/deviate-dv8/serpfree.git
+```
+
+Install dependencies:
+
+```bash
+cd serpfree
+npm install
+```
+
+## Usage
+
+```bash
+npm run dev
+```
+
+## Example Usage
+
+POST:
+
+```bash
+curl -X POST http://localhost:3000/api/serp/search \
+-H "Content-Type: application/json" \
+-d '{
+  "provider": "google",
+  "query": "example search query"
+}'
+```
+
+## Notes
+
+- The project uses `puppeteer-real-browser` to avoid detection by Bing, Yahoo, and DuckDuckGo. 
+- Google works if your IP is already recognized by Google servers. Deploying it on a VPS with a fresh IP may fail initially due to Google's anti-bot mechanism. You will need to manually search once and pass their CAPTCHA to obtain a session ID.
+
+## Future Updates
+
+- Add support for location-based and language-specific queries.
