@@ -54,3 +54,9 @@ curl -X POST http://localhost:3000/api/serp/search \
 ## Future Updates
 
 - Add support for location-based and language-specific queries.
+
+## Cloud Deployment
+
+The project is deployed on Render and can be accessed at:
+
+[serpfree on Render](https://serpfree.onrender.com)
