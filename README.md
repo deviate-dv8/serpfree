@@ -60,3 +60,8 @@ curl -X POST http://localhost:3000/api/serp/search \
 The project is deployed on Render and can be accessed at:
 
 [serpfree on Render](https://serpfree.onrender.com)
+
+
+## Example Multi-tab Scraping
+
+[Screencast From 2025-07-28 13-12-32.webm](https://github.com/user-attachments/assets/c33ab55f-a123-4120-bf27-256d0637410f)
