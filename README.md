@@ -64,7 +64,4 @@ The project is deployed on Render and can be accessed at:
 
 ## Example Multi-tab Scraping
 
-<video style="width: 100%;" controls>
-  <source src="https://github.com/user-attachments/assets/c33ab55f-a123-4120-bf27-256d0637410f" type="video/webm">
-  Your browser does not support the video tag.
-</video>
+[Screencast From 2025-07-28 13-12-32.webm](https://github.com/user-attachments/assets/c33ab55f-a123-4120-bf27-256d0637410f)
