@@ -86,13 +86,13 @@ export default class SERPScraper {
         console.log(
           "Browser launched and initial search completed successfully!",
         );
-
+        await page.close();
         // Initialize the first tab in the pool
-        this.tabPool.push({
-          page: page as unknown as Page,
-          busy: false,
-          lastUsed: Date.now(),
-        });
+        // this.tabPool.push({
+        //   page: page as unknown as Page,
+        //   busy: false,
+        //   lastUsed: Date.now(),
+        // });
 
         // Start idle tab cleanup
         this.startIdleTabCleanup();
