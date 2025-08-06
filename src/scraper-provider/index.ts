@@ -86,22 +86,22 @@ export default class SERPScraper {
         console.log(
           "Browser launched and initial search completed successfully!",
         );
+
+        // Initialize the first tab in the pool
+        this.tabPool.push({
+          page: page as unknown as Page,
+          busy: false,
+          lastUsed: Date.now(),
+        });
+
+        // Start idle tab cleanup
+        this.startIdleTabCleanup();
       } catch (error) {
         console.error("Error during initial search:", error);
         this.ready = false;
         await this.closeBrowser();
         await this.launchBrowser();
       }
-
-      // Initialize the first tab in the pool
-      this.tabPool.push({
-        page: page as unknown as Page,
-        busy: false,
-        lastUsed: Date.now(),
-      });
-
-      // Start idle tab cleanup
-      this.startIdleTabCleanup();
     } catch (error) {
       console.error("Error launching browser:", error);
     }
