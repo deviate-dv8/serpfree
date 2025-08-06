@@ -49,7 +49,7 @@ curl -X POST http://localhost:3000/api/serp/search \
 ## Notes
 
 - The project uses `puppeteer-real-browser` to avoid detection by Bing, Yahoo, and DuckDuckGo. 
-- Google works if your IP is already recognized by Google servers. Deploying it on a VPS with a fresh IP may fail initially due to Google's anti-bot mechanism. You will need to manually search once and pass their CAPTCHA to obtain a session ID.
+- ~~Google works if your IP is already recognized by Google servers. Deploying it on a VPS with a fresh IP may fail initially due to Google's anti-bot mechanism. You will need to manually search once and pass their CAPTCHA to obtain a session ID.~~ **(Solved)**
 
 ## Future Updates
 
