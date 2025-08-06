@@ -61,16 +61,19 @@ export default class SERPScraper {
           "--disable-setuid-sandbox",
           "--disable-blink-features=AutomationControlled",
         ],
+        turnstile: true,
         proxy: {
           host: process.env.PROXY_HOST || "",
           port: parseInt(process.env.PROXY_PORT || "0", 10),
         },
         disableXvfb: process.env.NODE_ENV === "development",
+        ignoreAllFlags: false,
         plugins: [],
       });
 
       this.browser = browser as unknown as Browser;
       await page.setViewport({ width: 1280, height: 800 });
+      await page.goto("https://www.google.com");
 
       // Initialize the first tab in the pool
       this.tabPool.push({
