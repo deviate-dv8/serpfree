@@ -61,6 +61,10 @@ export default class SERPScraper {
           "--disable-setuid-sandbox",
           "--disable-blink-features=AutomationControlled",
         ],
+        proxy: {
+          host: process.env.PROXY_HOST || "",
+          port: parseInt(process.env.PROXY_PORT || "0", 10),
+        },
         disableXvfb: process.env.NODE_ENV === "development",
         plugins: [],
       });
