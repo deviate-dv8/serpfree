@@ -20,6 +20,8 @@ app.use("/api", routes);
 app.listen(PORT, () => {
   scraper = new SERPScraper(parseInt(process.env.TAB_LIMIT as string) || 1000);
   console.log("⚡️[server]: Server is running at http://localhost:" + PORT);
+  const PROXY_HOST = process.env.PROXY_HOST;
+  const PROXY_PORT = process.env.PROXY_PORT;
   if (PROXY_HOST && PROXY_PORT) {
     console.log(`Using proxy: ${PROXY_HOST}:${PROXY_PORT}`);
   } else {
