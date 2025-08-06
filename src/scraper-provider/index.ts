@@ -76,7 +76,12 @@ export default class SERPScraper {
       await page.setViewport({ width: 1280, height: 800 });
       await page.goto("https://www.google.com");
       try {
-        await this.searchSimple("Minecraft", SearchEngine.GOOGLE);
+        const { cancel, promise } = await this.search(
+          "Minecraft",
+          SearchEngine.GOOGLE,
+        );
+        await promise;
+
         this.ready = true;
         console.log(
           "Browser launched and initial search completed successfully!",
