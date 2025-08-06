@@ -43,7 +43,7 @@ export default class SERPScraper {
   private maxTabs: number;
   private maxQueueSize: number;
   private processingQueue: boolean = false;
-  private tabIdleTimeout: number = 5000;
+  private tabIdleTimeout: number = 60000;
   public ready: boolean = false;
 
   constructor(maxTabs: number = 1000, maxQueueSize: number = 1000) {
