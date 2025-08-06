@@ -20,6 +20,11 @@ app.use("/api", routes);
 app.listen(PORT, () => {
   scraper = new SERPScraper(parseInt(process.env.TAB_LIMIT as string) || 1000);
   console.log("⚡️[server]: Server is running at http://localhost:" + PORT);
+  if (PROXY_HOST && PROXY_PORT) {
+    console.log(`Using proxy: ${PROXY_HOST}:${PROXY_PORT}`);
+  } else {
+    console.log("No proxy configured.");
+  }
 });
 
 process.on("SIGINT", async () => {
