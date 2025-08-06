@@ -44,6 +44,7 @@ export default class SERPScraper {
   private maxQueueSize: number;
   private processingQueue: boolean = false;
   private tabIdleTimeout: number = 5000;
+  public ready: boolean = false;
 
   constructor(maxTabs: number = 1000, maxQueueSize: number = 1000) {
     this.maxTabs = maxTabs;
@@ -74,6 +75,18 @@ export default class SERPScraper {
       this.browser = browser as unknown as Browser;
       await page.setViewport({ width: 1280, height: 800 });
       await page.goto("https://www.google.com");
+      try {
+        await this.searchSimple("Minecraft", SearchEngine.GOOGLE);
+        this.ready = true;
+        console.log(
+          "Browser launched and initial search completed successfully!",
+        );
+      } catch (error) {
+        console.error("Error during initial search:", error);
+        this.ready = false;
+        await this.closeBrowser();
+        await this.launchBrowser();
+      }
 
       // Initialize the first tab in the pool
       this.tabPool.push({

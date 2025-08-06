@@ -41,7 +41,9 @@ async function search(req: Request, res: Response) {
   if (!scraper) {
     return res.status(500).json({ message: "Scraper not initialized" });
   }
-
+  if (!scraper.ready) {
+    return res.status(503).json({ message: "Scraper is not ready" });
+  }
   const { query, provider } = parsed.data;
   const requestId = `${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
 
