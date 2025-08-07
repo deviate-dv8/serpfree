@@ -1,10 +1,6 @@
 import { connect } from "puppeteer-real-browser";
-import StealthPlugin from "puppeteer-extra-plugin-stealth";
-import AnonymizeUAPlugin from "puppeteer-extra-plugin-anonymize-ua";
 import { Browser, Page } from "puppeteer";
 import PreprocessService from "./preprocessService";
-
-const stealth = StealthPlugin();
 
 export enum SearchEngine {
   GOOGLE = "https://google.com",
