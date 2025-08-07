@@ -23,7 +23,6 @@ async function logUsage() {
   console.log(`CPU Load: ${cpu.currentLoad.toFixed(2)}%`);
 }
 
-setInterval(logUsage, 1000);
 app.get("/", (req, res) => {
   res.json({ message: "Welcome to SERP Scraper API" });
 });
@@ -37,6 +36,11 @@ app.listen(PORT, () => {
     console.log(`Using proxy: ${PROXY_HOST}:${PROXY_PORT}`);
   } else {
     console.log("No proxy configured.");
+  }
+  const USAGE_MONITORING = process.env.USAGE_MONITORING === "true";
+  if (USAGE_MONITORING) {
+    setInterval(logUsage, 1000);
+    console.log("Usage monitoring enabled.");
   }
 });
 

@@ -156,8 +156,9 @@ export default class SERPScraper {
         const page = await this.browser!.newPage();
         // await page.setViewport({ width: 1280, height: 800 });
 
-        // Set up request blocking for images and fonts
-        await this.setupRequestBlocking(page);
+        if (process.env.ENABLE_RESOURCE_BLOCKING === "true") {
+          await this.setupRequestBlocking(page);
+        }
 
         const newTab: TabPool = {
           page,
@@ -404,7 +405,9 @@ export default class SERPScraper {
       }
 
       // Setup bandwidth tracking before navigation
-      bandwidthMetrics = this.setupBandwidthTracking(tab.page);
+      if (process.env.ENABLE_BANDWIDTH_LOGGING === "true") {
+        bandwidthMetrics = this.setupBandwidthTracking(tab.page);
+      }
 
       const url = await this.urlQueryProvider(task.query, task.searchEngine);
 
@@ -446,7 +449,7 @@ export default class SERPScraper {
       }
 
       // Log bandwidth metrics before resolving
-      if (bandwidthMetrics) {
+      if (bandwidthMetrics && process.env.ENABLE_BANDWIDTH_LOGGING === "true") {
         this.logBandwidthMetrics(
           task.id,
           task.query,
@@ -458,7 +461,7 @@ export default class SERPScraper {
       task.resolve(results);
     } catch (error) {
       // Log bandwidth metrics even on error
-      if (bandwidthMetrics) {
+      if (bandwidthMetrics && process.env.ENABLE_BANDWIDTH_LOGGING === "true") {
         this.logBandwidthMetrics(
           task.id,
           task.query,
