@@ -142,8 +142,9 @@ export default class SERPScraper {
       this.GoogleCaptchaError = false;
       await this.closeBrowser();
       await this.launchBrowser();
-      return;
+      return true;
     }
+    return false;
   }
   private startIdleTabCleanup() {
     this.cleanUpIntervalId = setInterval(async () => {
@@ -152,7 +153,10 @@ export default class SERPScraper {
         (tab) => !tab.busy && now - tab.lastUsed > this.tabIdleTimeout,
       );
 
-      await this.handleCaptchaRestart();
+      const restart = await this.handleCaptchaRestart();
+      if (restart) {
+        return;
+      }
       // Keep at least 1 tab, close excess idle tabs
       if (this.tabPool.length > 1 && idleTabs.length > 0) {
         const tabsToClose = idleTabs.slice(0, idleTabs.length - 1);
@@ -166,7 +170,10 @@ export default class SERPScraper {
             console.error("Error closing idle tab:", error);
           }
         }
-        await this.handleCaptchaRestart();
+        const restart = await this.handleCaptchaRestart();
+        if (restart) {
+          return;
+        }
       }
     }, 60000); // Check every minute
   }
