@@ -70,10 +70,16 @@ export default class SERPScraper {
         disableXvfb: process.env.NODE_ENV === "development",
         ignoreAllFlags: false,
         plugins: [],
+        connectOption: {
+          defaultViewport: {
+            height: 640,
+            width: 480,
+          },
+        },
       });
 
       this.browser = browser as unknown as Browser;
-      await page.setViewport({ width: 1280, height: 800 });
+      // await page.setViewport({ width: 1280, height: 800 });
       await page.goto("https://www.google.com");
       try {
         const { cancel, promise } = await this.search(
@@ -139,7 +145,7 @@ export default class SERPScraper {
       // Create new tab if under limit
       try {
         const page = await this.browser!.newPage();
-        await page.setViewport({ width: 1280, height: 800 });
+        // await page.setViewport({ width: 1280, height: 800 });
 
         const newTab: TabPool = {
           page,
