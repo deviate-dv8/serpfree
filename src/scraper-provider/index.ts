@@ -40,6 +40,7 @@ interface BandwidthMetrics {
   totalBytes: number;
   requestCount: number;
   responseCount: number;
+  blockedRequests: number;
   startTime: number;
   endTime?: number;
 }
@@ -155,6 +156,9 @@ export default class SERPScraper {
         const page = await this.browser!.newPage();
         // await page.setViewport({ width: 1280, height: 800 });
 
+        // Set up request blocking for images and fonts
+        await this.setupRequestBlocking(page);
+
         const newTab: TabPool = {
           page,
           busy: false,
@@ -188,48 +192,112 @@ export default class SERPScraper {
     return availableTab;
   }
 
+  private async setupRequestBlocking(page: Page): Promise<void> {
+    await page.setRequestInterception(true);
+
+    page.on("request", (request) => {
+      const resourceType = request.resourceType();
+      const url = request.url();
+
+      // Block images, fonts, and other unnecessary resources
+      if (
+        resourceType === "image" ||
+        resourceType === "font" ||
+        resourceType === "media" ||
+        // Block specific file extensions
+        /\.(jpg|jpeg|png|gif|webp|svg|ico|woff|woff2|ttf|otf|eot)$/i.test(
+          url,
+        ) ||
+        // Block common image/font domains
+        /\.(googleusercontent|gstatic|googleapis)\.com.*\.(jpg|jpeg|png|gif|webp|svg|ico|woff|woff2|ttf|otf|eot)/i.test(
+          url,
+        ) ||
+        // Block other common resource patterns
+        url.includes("/images/") ||
+        url.includes("/fonts/") ||
+        url.includes("/assets/images/") ||
+        url.includes("/assets/fonts/")
+      ) {
+        request.abort();
+      } else {
+        request.continue();
+      }
+    });
+  }
+
   private setupBandwidthTracking(page: Page): BandwidthMetrics {
     const metrics: BandwidthMetrics = {
       totalBytes: 0,
       requestCount: 0,
       responseCount: 0,
+      blockedRequests: 0,
       startTime: Date.now(),
     };
 
+    // Track blocked requests
+    page.on("requestfailed", (request) => {
+      const resourceType = request.resourceType();
+      if (
+        resourceType === "image" ||
+        resourceType === "font" ||
+        resourceType === "media"
+      ) {
+        metrics.blockedRequests++;
+      }
+    });
+
     // Track requests
     page.on("request", (request) => {
-      metrics.requestCount++;
-      // Log request size if available (usually not available for outgoing requests)
-      const postData = request.postData();
-      if (postData) {
-        metrics.totalBytes += Buffer.byteLength(postData, "utf8");
+      const resourceType = request.resourceType();
+      // Only count requests that we're not blocking
+      if (
+        resourceType !== "image" &&
+        resourceType !== "font" &&
+        resourceType !== "media"
+      ) {
+        metrics.requestCount++;
+        // Log request size if available (usually not available for outgoing requests)
+        const postData = request.postData();
+        if (postData) {
+          metrics.totalBytes += Buffer.byteLength(postData, "utf8");
+        }
       }
     });
 
     // Track responses
     page.on("response", async (response) => {
-      metrics.responseCount++;
-      try {
-        // Get response size from headers
-        const contentLength = response.headers()["content-length"];
-        if (contentLength) {
-          metrics.totalBytes += parseInt(contentLength, 10);
-        } else {
-          // If no content-length header, try to get the actual response size
-          try {
-            const buffer = await response.buffer();
-            metrics.totalBytes += buffer.length;
-          } catch (bufferError) {
-            // If we can't get the buffer, estimate based on response status
-            // This is a fallback for cases where the response body can't be accessed
-            if (response.ok()) {
-              metrics.totalBytes += 1024; // Estimate 1KB for successful responses without size
+      const request = response.request();
+      const resourceType = request.resourceType();
+
+      // Only count responses for requests we're not blocking
+      if (
+        resourceType !== "image" &&
+        resourceType !== "font" &&
+        resourceType !== "media"
+      ) {
+        metrics.responseCount++;
+        try {
+          // Get response size from headers
+          const contentLength = response.headers()["content-length"];
+          if (contentLength) {
+            metrics.totalBytes += parseInt(contentLength, 10);
+          } else {
+            // If no content-length header, try to get the actual response size
+            try {
+              const buffer = await response.buffer();
+              metrics.totalBytes += buffer.length;
+            } catch (bufferError) {
+              // If we can't get the buffer, estimate based on response status
+              // This is a fallback for cases where the response body can't be accessed
+              if (response.ok()) {
+                metrics.totalBytes += 1024; // Estimate 1KB for successful responses without size
+              }
             }
           }
+        } catch (error) {
+          // Silently handle errors in response size tracking
+          // Don't let bandwidth tracking interfere with the main functionality
         }
-      } catch (error) {
-        // Silently handle errors in response size tracking
-        // Don't let bandwidth tracking interfere with the main functionality
       }
     });
 
@@ -255,6 +323,9 @@ export default class SERPScraper {
     console.log(`   Total Bytes: ${metrics.totalBytes.toLocaleString()} bytes`);
     console.log(`   Requests: ${metrics.requestCount}`);
     console.log(`   Responses: ${metrics.responseCount}`);
+    console.log(
+      `   Blocked Requests: ${metrics.blockedRequests} (images/fonts/media)`,
+    );
     console.log(
       `   Avg per request: ${(metrics.totalBytes / Math.max(metrics.responseCount, 1) / 1024).toFixed(2)} KB`,
     );
