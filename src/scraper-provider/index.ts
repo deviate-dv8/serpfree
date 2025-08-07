@@ -58,7 +58,8 @@ export default class SERPScraper {
   private processingQueue: boolean = false;
   private tabIdleTimeout: number = 60000;
   public ready: boolean = false;
-
+  private GoogleCaptchaError: boolean = false;
+  private cleanUpIntervalId: NodeJS.Timeout | null = null;
   constructor(maxTabs: number = 1000, maxQueueSize: number = 1000) {
     this.maxTabs = maxTabs;
     this.maxQueueSize = maxQueueSize;
@@ -95,8 +96,8 @@ export default class SERPScraper {
         plugins: [],
         connectOption: {
           defaultViewport: {
-            height: 480,
-            width: 360,
+            height: 375,
+            width: 667,
           },
         },
       });
@@ -135,14 +136,23 @@ export default class SERPScraper {
       console.error("Error launching browser:", error);
     }
   }
-
+  private async handleCaptchaRestart() {
+    if (this.GoogleCaptchaError && this.ready && this.tabPool.length == 1) {
+      console.log("Restarting Browser due to Google Captcha Error");
+      this.GoogleCaptchaError = false;
+      await this.closeBrowser();
+      await this.launchBrowser();
+      return;
+    }
+  }
   private startIdleTabCleanup() {
-    setInterval(async () => {
+    this.cleanUpIntervalId = setInterval(async () => {
       const now = Date.now();
       const idleTabs = this.tabPool.filter(
         (tab) => !tab.busy && now - tab.lastUsed > this.tabIdleTimeout,
       );
 
+      await this.handleCaptchaRestart();
       // Keep at least 1 tab, close excess idle tabs
       if (this.tabPool.length > 1 && idleTabs.length > 0) {
         const tabsToClose = idleTabs.slice(0, idleTabs.length - 1);
@@ -156,6 +166,7 @@ export default class SERPScraper {
             console.error("Error closing idle tab:", error);
           }
         }
+        await this.handleCaptchaRestart();
       }
     }, 60000); // Check every minute
   }
@@ -584,6 +595,10 @@ export default class SERPScraper {
   }
 
   async closeBrowser() {
+    if (this.cleanUpIntervalId) {
+      clearInterval(this.cleanUpIntervalId);
+      this.cleanUpIntervalId = null;
+    }
     try {
       // Cancel and clear the queue
       const cancelledCount = this.cancelAllRequests();
@@ -641,6 +656,7 @@ export default class SERPScraper {
     if (!rsoDiv) {
       const captcha = await page.$("form#captcha-form");
       if (captcha) {
+        if (this.ready) this.GoogleCaptchaError = true;
         throw new Error("Captcha detected");
       }
 
