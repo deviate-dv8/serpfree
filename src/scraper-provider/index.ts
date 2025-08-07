@@ -36,6 +36,14 @@ interface TabPool {
   lastUsed: number;
 }
 
+interface BandwidthMetrics {
+  totalBytes: number;
+  requestCount: number;
+  responseCount: number;
+  startTime: number;
+  endTime?: number;
+}
+
 export default class SERPScraper {
   private browser: Browser | null = null;
   private tabPool: TabPool[] = [];
@@ -180,6 +188,79 @@ export default class SERPScraper {
     return availableTab;
   }
 
+  private setupBandwidthTracking(page: Page): BandwidthMetrics {
+    const metrics: BandwidthMetrics = {
+      totalBytes: 0,
+      requestCount: 0,
+      responseCount: 0,
+      startTime: Date.now(),
+    };
+
+    // Track requests
+    page.on("request", (request) => {
+      metrics.requestCount++;
+      // Log request size if available (usually not available for outgoing requests)
+      const postData = request.postData();
+      if (postData) {
+        metrics.totalBytes += Buffer.byteLength(postData, "utf8");
+      }
+    });
+
+    // Track responses
+    page.on("response", async (response) => {
+      metrics.responseCount++;
+      try {
+        // Get response size from headers
+        const contentLength = response.headers()["content-length"];
+        if (contentLength) {
+          metrics.totalBytes += parseInt(contentLength, 10);
+        } else {
+          // If no content-length header, try to get the actual response size
+          try {
+            const buffer = await response.buffer();
+            metrics.totalBytes += buffer.length;
+          } catch (bufferError) {
+            // If we can't get the buffer, estimate based on response status
+            // This is a fallback for cases where the response body can't be accessed
+            if (response.ok()) {
+              metrics.totalBytes += 1024; // Estimate 1KB for successful responses without size
+            }
+          }
+        }
+      } catch (error) {
+        // Silently handle errors in response size tracking
+        // Don't let bandwidth tracking interfere with the main functionality
+      }
+    });
+
+    return metrics;
+  }
+
+  private logBandwidthMetrics(
+    taskId: string,
+    query: string,
+    searchEngine: SearchEngine,
+    metrics: BandwidthMetrics,
+  ) {
+    metrics.endTime = Date.now();
+    const duration = metrics.endTime - metrics.startTime;
+    const totalKB = (metrics.totalBytes / 1024).toFixed(2);
+    const totalMB = (metrics.totalBytes / (1024 * 1024)).toFixed(2);
+
+    console.log(`🔍 Search Bandwidth Report - Task ${taskId}`);
+    console.log(`   Query: "${query}"`);
+    console.log(`   Engine: ${searchEngine}`);
+    console.log(`   Duration: ${duration}ms`);
+    console.log(`   Total Bandwidth: ${totalKB} KB (${totalMB} MB)`);
+    console.log(`   Total Bytes: ${metrics.totalBytes.toLocaleString()} bytes`);
+    console.log(`   Requests: ${metrics.requestCount}`);
+    console.log(`   Responses: ${metrics.responseCount}`);
+    console.log(
+      `   Avg per request: ${(metrics.totalBytes / Math.max(metrics.responseCount, 1) / 1024).toFixed(2)} KB`,
+    );
+    console.log(`   ────────────────────────────────────────────────────`);
+  }
+
   private async processQueue() {
     if (this.processingQueue || this.taskQueue.length === 0) {
       return;
@@ -243,11 +324,16 @@ export default class SERPScraper {
   }
 
   private async executeSearch(tab: TabPool, task: SearchTask) {
+    let bandwidthMetrics: BandwidthMetrics | null = null;
+
     try {
       // Check if cancelled before starting
       if (task.cancelled || task.abortController.signal.aborted) {
         throw new Error("Request cancelled");
       }
+
+      // Setup bandwidth tracking before navigation
+      bandwidthMetrics = this.setupBandwidthTracking(tab.page);
 
       const url = await this.urlQueryProvider(task.query, task.searchEngine);
 
@@ -255,12 +341,14 @@ export default class SERPScraper {
       if (task.cancelled || task.abortController.signal.aborted) {
         throw new Error("Request cancelled");
       }
+
       // Updated this since sometimes Google Search can take longer
       if (task.searchEngine === SearchEngine.GOOGLE) {
         tab.page.setDefaultNavigationTimeout(60000);
       } else {
         tab.page.setDefaultNavigationTimeout(30000);
       }
+
       // Navigate with timeout and abort signal awareness
       await Promise.race([
         tab.page.goto(url, { waitUntil: "load" }),
@@ -286,8 +374,28 @@ export default class SERPScraper {
         throw new Error("Request cancelled");
       }
 
+      // Log bandwidth metrics before resolving
+      if (bandwidthMetrics) {
+        this.logBandwidthMetrics(
+          task.id,
+          task.query,
+          task.searchEngine,
+          bandwidthMetrics,
+        );
+      }
+
       task.resolve(results);
     } catch (error) {
+      // Log bandwidth metrics even on error
+      if (bandwidthMetrics) {
+        this.logBandwidthMetrics(
+          task.id,
+          task.query,
+          task.searchEngine,
+          bandwidthMetrics,
+        );
+      }
+
       if (!task.cancelled) {
         task.reject(error as Error);
       }
