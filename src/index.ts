@@ -17,7 +17,6 @@ app.use(express.urlencoded({ extended: true }));
 
 async function logUsage() {
   const [mem, cpu] = await Promise.all([si.mem(), si.currentLoad()]);
-  console.clear();
   console.log(
     `Memory: ${(mem.used / 1024 / 1024).toFixed(2)} MB used / ${(mem.total / 1024 / 1024).toFixed(2)} MB`,
   );
