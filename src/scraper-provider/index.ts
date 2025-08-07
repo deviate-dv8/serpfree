@@ -457,6 +457,7 @@ export default class SERPScraper {
         task.searchEngine,
       );
 
+      await tab.page.goto("about:blank");
       // Final check before resolving
       if (task.cancelled || task.abortController.signal.aborted) {
         throw new Error("Request cancelled");
