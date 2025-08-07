@@ -311,7 +311,7 @@ export default class SERPScraper {
     console.log(`   Requests: ${metrics.requestCount}`);
     console.log(`   Responses: ${metrics.responseCount}`);
     console.log(
-      `   Blocked Requests: ${metrics.blockedRequests} (images/fonts/media)`,
+      `   Blocked Requests: ${metrics.blockedRequests} (images/fonts/media/trackers)`,
     );
     console.log(
       `   Avg per request: ${(metrics.totalBytes / Math.max(metrics.responseCount, 1) / 1024).toFixed(2)} KB`,
