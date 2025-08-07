@@ -85,8 +85,8 @@ export default class SERPScraper {
         plugins: [],
         connectOption: {
           defaultViewport: {
-            height: 640,
-            width: 480,
+            height: 480,
+            width: 360,
           },
         },
       });
