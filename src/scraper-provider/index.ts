@@ -45,6 +45,9 @@ interface BandwidthMetrics {
   endTime?: number;
 }
 
+// Cached regular expressions for performance
+const isTracker = /(beacon|track|analytics|pixel|gtm|tagmanager|doubleclick)/i;
+
 export default class SERPScraper {
   private browser: Browser | null = null;
   private tabPool: TabPool[] = [];
@@ -196,36 +199,15 @@ export default class SERPScraper {
   private async setupRequestBlocking(page: Page): Promise<void> {
     await page.setRequestInterception(true);
 
-    // Pre-compile regex patterns only for DuckDuckGo-specific needs
-    const ddgScriptPattern =
-      /^https:\/\/(duckduckgo\.com|www\.duckduckgo\.com)\/.*\.js/i;
-    const trackingPatterns =
-      /(analytics|tracking|pixel|beacon|tagmanager|gtm|doubleclick|googlesyndication|facebook\.com\/tr)/i;
-
     page.on("request", (request) => {
-      const resourceType = request.resourceType();
-      const url = request.url();
-
-      // First-pass: allow essential resource types without domain checking
-      if (
-        resourceType === "document" ||
-        resourceType === "xhr" ||
-        resourceType === "fetch"
-      ) {
+      const t = request.resourceType();
+      if (t === "document") {
         request.continue();
-        return;
+      } else if (t === "script" && !isTracker.test(request.url())) {
+        request.continue();
+      } else {
+        request.abort();
       }
-
-      // Special handling for DuckDuckGo scripts
-      if (resourceType === "script") {
-        if (ddgScriptPattern.test(url) || !trackingPatterns.test(url)) {
-          request.continue();
-          return;
-        }
-      }
-
-      // Block everything else
-      request.abort();
     });
   }
 
