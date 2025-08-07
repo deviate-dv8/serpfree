@@ -46,7 +46,8 @@ interface BandwidthMetrics {
 }
 
 // Cached regular expressions for performance
-const isTracker = /(beacon|track|analytics|pixel|gtm|tagmanager|doubleclick)/i;
+const isTracker =
+  /(beacon|track|analytics|pixel|gtm|tagmanager|doubleclick|gstatic|xjs)/i;
 
 export default class SERPScraper {
   private browser: Browser | null = null;
