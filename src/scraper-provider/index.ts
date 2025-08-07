@@ -196,33 +196,36 @@ export default class SERPScraper {
   private async setupRequestBlocking(page: Page): Promise<void> {
     await page.setRequestInterception(true);
 
+    // Pre-compile regex patterns only for DuckDuckGo-specific needs
+    const ddgScriptPattern =
+      /^https:\/\/(duckduckgo\.com|www\.duckduckgo\.com)\/.*\.js/i;
+    const trackingPatterns =
+      /(analytics|tracking|pixel|beacon|tagmanager|gtm|doubleclick|googlesyndication|facebook\.com\/tr)/i;
+
     page.on("request", (request) => {
       const resourceType = request.resourceType();
       const url = request.url();
 
-      // Block images, fonts, and other unnecessary resources
+      // First-pass: allow essential resource types without domain checking
       if (
-        resourceType === "image" ||
-        resourceType === "font" ||
-        resourceType === "media" ||
-        // Block specific file extensions
-        /\.(jpg|jpeg|png|gif|webp|svg|ico|woff|woff2|ttf|otf|eot)$/i.test(
-          url,
-        ) ||
-        // Block common image/font domains
-        /\.(googleusercontent|gstatic|googleapis)\.com.*\.(jpg|jpeg|png|gif|webp|svg|ico|woff|woff2|ttf|otf|eot)/i.test(
-          url,
-        ) ||
-        // Block other common resource patterns
-        url.includes("/images/") ||
-        url.includes("/fonts/") ||
-        url.includes("/assets/images/") ||
-        url.includes("/assets/fonts/")
+        resourceType === "document" ||
+        resourceType === "xhr" ||
+        resourceType === "fetch"
       ) {
-        request.abort();
-      } else {
         request.continue();
+        return;
       }
+
+      // Special handling for DuckDuckGo scripts
+      if (resourceType === "script") {
+        if (ddgScriptPattern.test(url) || !trackingPatterns.test(url)) {
+          request.continue();
+          return;
+        }
+      }
+
+      // Block everything else
+      request.abort();
     });
   }
 
