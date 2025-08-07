@@ -74,6 +74,16 @@ export default class SERPScraper {
           "--no-sandbox",
           "--disable-setuid-sandbox",
           "--disable-blink-features=AutomationControlled",
+          "--disable-dev-shm-usage", // Avoid /dev/shm usage
+          "--no-zygote", // Disable zygote process
+          "--disable-software-rasterizer",
+          "--disable-extensions",
+          "--disable-background-networking",
+          "--disable-renderer-backgrounding",
+          "--memory-pressure-off",
+          "--disable-notifications",
+          // "--disable-background-timer-throttling",
+          // "--disable-backgrounding-occluded-windows",
         ],
         turnstile: true,
         proxy: {
