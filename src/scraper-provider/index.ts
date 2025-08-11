@@ -51,9 +51,13 @@ export default class SERPScraper {
   private baseContext: BaseSERPContext | null = null;
   private chromeContext: ChromeSERPContext | null = null;
 
+  private baseReady = false;
+  private chromeReady = false;
+  private baseReadyPromise: Promise<void> | null = null;
+  private chromeReadyPromise: Promise<void> | null = null;
+
   private maxTabs: number;
   private maxQueueSize: number;
-  public ready: boolean = false;
   private cleanUpIntervalId: NodeJS.Timeout | null = null;
 
   // Env switches
@@ -75,19 +79,13 @@ export default class SERPScraper {
         "Configuration error: both SERP_ONLY_GOOGLE and SERP_ONLY_BASE are set. Use only one.",
       );
     }
-
-    // If onlyGoogle is requested, force enable chrome context
     if (this.onlyGoogle && !this.enableChromeContext) {
-      console.warn(
-        "SERP_ONLY_GOOGLE is true but ENABLE_CHROME_CONTEXT is not. Enabling Chrome context.",
-      );
+      console.warn("SERP_ONLY_GOOGLE=true implies enabling Chrome context.");
       this.enableChromeContext = true;
     }
-
-    // If onlyBase is requested, ensure chrome context disabled
     if (this.onlyBase && this.enableChromeContext) {
       console.warn(
-        "SERP_ONLY_BASE is true; Chrome context will not be initialized despite ENABLE_CHROME_CONTEXT.",
+        "SERP_ONLY_BASE=true: Chrome context will not be initialized even if ENABLE_CHROME_CONTEXT is true.",
       );
     }
   }
@@ -128,25 +126,26 @@ export default class SERPScraper {
 
       this.browser = browser as unknown as Browser;
 
-      // Initialize contexts based on env
       await this.initializeContexts();
 
-      // Close the initial page opened by connect()
       try {
         await page.close();
       } catch {}
 
-      // Test enabled contexts
-      await this.testEnabledContexts();
+      // Start readiness test loops independently
+      if (this.baseContext) {
+        this.baseReadyPromise = this.runBaseTestLoop();
+        // Do not await chrome readiness here; base can be usable earlier
+      }
+      if (this.chromeContext) {
+        this.chromeReadyPromise = this.runChromeTestLoop();
+      }
 
       this.startIdleTabCleanup();
-      this.ready = true;
-      console.log("SERP Scraper is ready for use.");
+      console.log("SERP Scraper launched.");
     } catch (error) {
       console.error("Error launching browser:", error);
-      this.ready = false;
       await this.closeBrowser();
-      // Retry launching
       setTimeout(() => this.launchBrowser(), 5000);
     }
   }
@@ -158,61 +157,144 @@ export default class SERPScraper {
     if (!this.onlyGoogle) {
       this.baseContext = new BaseSERPContext(
         this.browser,
-        this.maxTabs,
+        this.enableChromeContext
+          ? Math.max(1, Math.floor(this.maxTabs / 2))
+          : this.maxTabs,
         this.maxQueueSize,
       );
       const baseOk = await this.baseContext.initialize();
       if (!baseOk) throw new Error("Failed to initialize base context");
     } else {
       this.baseContext = null;
+      this.baseReady = false;
+      this.baseReadyPromise = null;
     }
 
     // Chrome (Google) context
     if (this.enableChromeContext && !this.onlyBase) {
       this.chromeContext = new ChromeSERPContext(
         this.browser,
-        Math.max(1, Math.floor(this.maxTabs / 2)), // split tabs if both contexts on
+        this.baseContext
+          ? Math.max(1, Math.floor(this.maxTabs / 2))
+          : this.maxTabs,
         this.maxQueueSize,
       );
       const chromeOk = await this.chromeContext.initialize();
-      if (!chromeOk) throw new Error("Failed to initialize chrome context");
+      if (!chromeOk) {
+        console.warn(
+          "Failed to initialize Chrome context. Readiness loop will recreate it.",
+        );
+      }
     } else {
       this.chromeContext = null;
+      this.chromeReady = false;
+      this.chromeReadyPromise = null;
     }
   }
 
-  private async testEnabledContexts(): Promise<void> {
-    // Keep tests simple and fast; do not block readiness for long
-    const tests: Promise<any>[] = [];
+  // Recreate and test Base context until test search succeeds
+  private async runBaseTestLoop(): Promise<void> {
+    while (true) {
+      try {
+        if (!this.baseContext) {
+          // Create new base context if missing (shouldn't happen unless set to onlyGoogle, but keep safe)
+          if (!this.browser) throw new Error("Browser not available");
+          this.baseContext = new BaseSERPContext(
+            this.browser,
+            this.maxTabs,
+            this.maxQueueSize,
+          );
+          await this.baseContext.initialize();
+        }
 
-    if (this.baseContext) {
-      const { promise } = await this.baseContext.search(
-        "ping",
-        SearchEngine.BING,
-      );
-      tests.push(
-        promise.catch((e) => console.warn("Base test failed:", e.message)),
-      );
+        // Use Bing for base test to avoid Google-specific flows
+        const { promise } = await this.baseContext.search(
+          "ping",
+          SearchEngine.BING,
+        );
+        await promise;
+
+        this.baseReady = true;
+        console.log("Base context search test passed.");
+        return;
+      } catch (err) {
+        this.baseReady = false;
+        console.warn(
+          "Base context search test failed. Recreating base context...",
+        );
+        try {
+          await this.baseContext?.close();
+        } catch {}
+        this.baseContext = null;
+
+        if (!this.browser) throw new Error("Browser not available");
+        this.baseContext = new BaseSERPContext(
+          this.browser,
+          this.enableChromeContext
+            ? Math.max(1, Math.floor(this.maxTabs / 2))
+            : this.maxTabs,
+          this.maxQueueSize,
+        );
+        await this.baseContext.initialize();
+        // Loop continues to retry immediately
+      }
     }
+  }
 
-    if (this.chromeContext) {
-      const { promise } = await this.chromeContext.search(
-        "ping",
-        SearchEngine.GOOGLE,
-      );
-      tests.push(
-        promise.catch((e) => console.warn("Chrome test failed:", e.message)),
-      );
+  // Recreate and test Chrome (Google) context until test search succeeds
+  private async runChromeTestLoop(): Promise<void> {
+    while (true) {
+      try {
+        if (!this.chromeContext) {
+          if (!this.browser) throw new Error("Browser not available");
+          this.chromeContext = new ChromeSERPContext(
+            this.browser,
+            this.baseContext
+              ? Math.max(1, Math.floor(this.maxTabs / 2))
+              : this.maxTabs,
+            this.maxQueueSize,
+          );
+          await this.chromeContext.initialize();
+        }
+
+        const { promise } = await this.chromeContext.search(
+          "ping",
+          SearchEngine.GOOGLE,
+        );
+        await promise;
+
+        this.chromeReady = true;
+        console.log("Chrome context search test passed.");
+        return;
+      } catch (err) {
+        this.chromeReady = false;
+        console.warn(
+          "Chrome context search test failed. Recreating Chrome context...",
+        );
+        try {
+          await this.chromeContext?.close();
+        } catch {}
+        this.chromeContext = null;
+
+        if (!this.browser) throw new Error("Browser not available");
+        this.chromeContext = new ChromeSERPContext(
+          this.browser,
+          this.baseContext
+            ? Math.max(1, Math.floor(this.maxTabs / 2))
+            : this.maxTabs,
+          this.maxQueueSize,
+        );
+        await this.chromeContext.initialize();
+        // Loop continues to retry immediately
+      }
     }
-
-    await Promise.allSettled(tests);
   }
 
   private startIdleTabCleanup(): void {
     this.cleanUpIntervalId = setInterval(() => {
       if (this.baseContext) this.baseContext.cleanupIdleTabs();
       if (this.chromeContext) this.chromeContext.cleanupIdleTabs();
-    }, 60000); // Run cleanup every minute
+    }, 60000);
   }
 
   async search(
@@ -223,32 +305,37 @@ export default class SERPScraper {
       await this.launchBrowser();
       return this.search(query, searchEngine);
     }
-    if (!this.ready) {
-      throw new Error("SERP Scraper is not ready yet");
-    }
 
     // Enforce "only" modes
     if (this.onlyGoogle && searchEngine !== SearchEngine.GOOGLE) {
       throw new Error("Only Google searches are enabled by configuration");
     }
     if (this.onlyBase && searchEngine === SearchEngine.GOOGLE) {
-      // If only base is enabled and someone requests Google, run via base if available
-      if (!this.baseContext) {
-        throw new Error("Base context is not available");
+      if (!this.baseContext) throw new Error("Base context is not available");
+      // Await base readiness if needed
+      if (!this.baseReady && this.baseReadyPromise) {
+        await this.baseReadyPromise;
       }
       return this.baseContext.search(query, searchEngine);
     }
 
-    // Route: Google -> Chrome context if enabled, otherwise base
+    // Route: Google -> Chrome context, wait for Chrome readiness
     if (searchEngine === SearchEngine.GOOGLE && this.chromeContext) {
+      if (!this.chromeReady && this.chromeReadyPromise) {
+        await this.chromeReadyPromise;
+      }
       return this.chromeContext.search(query, searchEngine);
     }
 
-    if (!this.baseContext) {
-      throw new Error("Base context is not available");
+    // Route others to Base, wait for Base readiness
+    if (this.baseContext) {
+      if (!this.baseReady && this.baseReadyPromise) {
+        await this.baseReadyPromise;
+      }
+      return this.baseContext.search(query, searchEngine);
     }
 
-    return this.baseContext.search(query, searchEngine);
+    throw new Error("No suitable context available for the requested search");
   }
 
   async searchSimple(
@@ -273,11 +360,12 @@ export default class SERPScraper {
       : null;
 
     return {
-      ready: this.ready,
       browserActive: !!this.browser,
       enableChromeContext: this.enableChromeContext,
       onlyGoogle: this.onlyGoogle,
       onlyBase: this.onlyBase,
+      baseReady: this.baseReady,
+      chromeReady: this.chromeReady,
       baseContextActive: !!this.baseContext,
       chromeContextActive: !!this.chromeContext,
       base: baseStatus,
@@ -313,7 +401,11 @@ export default class SERPScraper {
         this.browser = null;
       }
 
-      this.ready = false;
+      this.baseReady = false;
+      this.chromeReady = false;
+      this.baseReadyPromise = null;
+      this.chromeReadyPromise = null;
+
       console.log("Browser closed successfully");
     } catch (error) {
       console.error("Error closing browser:", error);

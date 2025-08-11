@@ -25,6 +25,10 @@ export class BaseSERPContext extends PreprocessService {
     this.maxQueueSize = maxQueueSize;
   }
 
+  get ready(): boolean {
+    return this.initComplete;
+  }
+
   async initialize() {
     try {
       const page = await this.browser.newPage();
@@ -399,6 +403,7 @@ export class BaseSERPContext extends PreprocessService {
     const cancelledTasks = this.taskQueue.filter((task) => task.cancelled);
 
     return {
+      ready: this.ready,
       queueLength: activeTasks.length,
       cancelledInQueue: cancelledTasks.length,
       totalTabs: this.tabPool.length,

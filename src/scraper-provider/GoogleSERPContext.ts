@@ -26,6 +26,10 @@ export class ChromeSERPContext extends PreprocessService {
     this.maxQueueSize = maxQueueSize;
   }
 
+  get ready(): boolean {
+    return this.initComplete;
+  }
+
   async initialize(): Promise<boolean> {
     try {
       // Isolated incognito context for Google
@@ -37,15 +41,13 @@ export class ChromeSERPContext extends PreprocessService {
         await this.setupRequestBlocking(page);
       }
 
-      // Optionally warm up Google (can be commented out if undesired)
+      // Warmup is best-effort
       try {
         await page.goto("https://www.google.com", {
           waitUntil: "load",
           timeout: 20000,
         });
-      } catch {
-        // Best-effort warmup; do not fail initialization
-      }
+      } catch {}
 
       this.tabPool.push({
         page,
@@ -54,11 +56,12 @@ export class ChromeSERPContext extends PreprocessService {
         contextType: "google",
       });
 
-      console.log("Chrome SERP context initialized successfully");
       this.initComplete = true;
+      console.log("Chrome SERP context initialized successfully");
       return true;
     } catch (error) {
       console.error("Failed to initialize Chrome context:", error);
+      this.initComplete = false;
       return false;
     }
   }
@@ -68,29 +71,24 @@ export class ChromeSERPContext extends PreprocessService {
     if (availableTab) return availableTab;
 
     if (this.tabPool.length < this.maxTabs) {
-      try {
-        if (!this.incognitoContext)
-          throw new Error("Incognito context not initialized");
-        const page = await this.incognitoContext.newPage();
+      if (!this.incognitoContext)
+        throw new Error("Incognito context not initialized");
+      const page = await this.incognitoContext.newPage();
 
-        if (process.env.ENABLE_RESOURCE_BLOCKING === "true") {
-          await this.setupRequestBlocking(page);
-        }
-
-        const newTab: TabPool = {
-          page,
-          busy: false,
-          lastUsed: Date.now(),
-          contextType: "google",
-        };
-
-        this.tabPool.push(newTab);
-        console.log(`Created new Chrome tab. Total: ${this.tabPool.length}`);
-        return newTab;
-      } catch (error) {
-        console.error("Error creating new Chrome tab:", error);
-        throw error;
+      if (process.env.ENABLE_RESOURCE_BLOCKING === "true") {
+        await this.setupRequestBlocking(page);
       }
+
+      const newTab: TabPool = {
+        page,
+        busy: false,
+        lastUsed: Date.now(),
+        contextType: "google",
+      };
+
+      this.tabPool.push(newTab);
+      console.log(`Created new Chrome tab. Total: ${this.tabPool.length}`);
+      return newTab;
     }
 
     return new Promise((resolve) => {
@@ -148,7 +146,6 @@ export class ChromeSERPContext extends PreprocessService {
     if (!this.initComplete) {
       throw new Error("Chrome context not fully initialized");
     }
-
     if (searchEngine !== SearchEngine.GOOGLE) {
       throw new Error("ChromeSERPContext only handles Google searches");
     }
@@ -263,8 +260,7 @@ export class ChromeSERPContext extends PreprocessService {
         throw new Error("Request cancelled");
       }
 
-      // Longer timeout for Google
-      tab.page.setDefaultNavigationTimeout(60000);
+      tab.page.setDefaultNavigationTimeout(60000); // Longer timeout for Google
 
       await Promise.race([
         tab.page.goto(url, { waitUntil: "load" }),
@@ -401,6 +397,7 @@ export class ChromeSERPContext extends PreprocessService {
     const cancelledTasks = this.taskQueue.filter((task) => task.cancelled);
 
     return {
+      ready: this.ready,
       queueLength: activeTasks.length,
       cancelledInQueue: cancelledTasks.length,
       totalTabs: this.tabPool.length,
@@ -433,6 +430,7 @@ export class ChromeSERPContext extends PreprocessService {
       this.incognitoContext = null;
     }
 
+    this.initComplete = false;
     console.log("Chrome context closed successfully");
   }
 }
