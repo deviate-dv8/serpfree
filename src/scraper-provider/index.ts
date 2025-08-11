@@ -80,7 +80,7 @@ export default class SERPScraper {
       );
     }
     if (this.onlyGoogle && !this.enableChromeContext) {
-      console.warn("SERP_ONLY_GOOGLE=true implies enabling Chrome context.");
+      // We still use the ChromeSERPContext, but in default (non-incognito) mode.
       this.enableChromeContext = true;
     }
     if (this.onlyBase && this.enableChromeContext) {
@@ -135,7 +135,6 @@ export default class SERPScraper {
       // Start readiness test loops independently
       if (this.baseContext) {
         this.baseReadyPromise = this.runBaseTestLoop();
-        // Do not await chrome readiness here; base can be usable earlier
       }
       if (this.chromeContext) {
         this.chromeReadyPromise = this.runChromeTestLoop();
@@ -153,7 +152,7 @@ export default class SERPScraper {
   private async initializeContexts() {
     if (!this.browser) throw new Error("Browser not initialized");
 
-    // Base context
+    // Base context (skip if onlyGoogle)
     if (!this.onlyGoogle) {
       this.baseContext = new BaseSERPContext(
         this.browser,
@@ -172,17 +171,30 @@ export default class SERPScraper {
 
     // Chrome (Google) context
     if (this.enableChromeContext && !this.onlyBase) {
+      // If SERP_ONLY_GOOGLE is true, run Chrome context in DEFAULT (non-incognito) mode.
+      const useIncognito = !this.onlyGoogle;
+
       this.chromeContext = new ChromeSERPContext(
         this.browser,
         this.baseContext
           ? Math.max(1, Math.floor(this.maxTabs / 2))
           : this.maxTabs,
         this.maxQueueSize,
+        useIncognito,
       );
+
       const chromeOk = await this.chromeContext.initialize();
+
+      // If onlyGoogle and initialization fails, restart entire browser (no other context available)
+      if (!chromeOk && this.onlyGoogle) {
+        throw new Error(
+          "Chrome context initialization failed while SERP_ONLY_GOOGLE=true. Restarting browser.",
+        );
+      }
+
       if (!chromeOk) {
         console.warn(
-          "Failed to initialize Chrome context. Readiness loop will recreate it.",
+          "Failed to initialize Chrome context; readiness loop will attempt recreation.",
         );
       }
     } else {
@@ -197,17 +209,18 @@ export default class SERPScraper {
     while (true) {
       try {
         if (!this.baseContext) {
-          // Create new base context if missing (shouldn't happen unless set to onlyGoogle, but keep safe)
           if (!this.browser) throw new Error("Browser not available");
           this.baseContext = new BaseSERPContext(
             this.browser,
-            this.maxTabs,
+            this.enableChromeContext
+              ? Math.max(1, Math.floor(this.maxTabs / 2))
+              : this.maxTabs,
             this.maxQueueSize,
           );
-          await this.baseContext.initialize();
+          const ok = await this.baseContext.initialize();
+          if (!ok) throw new Error("Base context init failed");
         }
 
-        // Use Bing for base test to avoid Google-specific flows
         const { promise } = await this.baseContext.search(
           "ping",
           SearchEngine.BING,
@@ -226,17 +239,7 @@ export default class SERPScraper {
           await this.baseContext?.close();
         } catch {}
         this.baseContext = null;
-
-        if (!this.browser) throw new Error("Browser not available");
-        this.baseContext = new BaseSERPContext(
-          this.browser,
-          this.enableChromeContext
-            ? Math.max(1, Math.floor(this.maxTabs / 2))
-            : this.maxTabs,
-          this.maxQueueSize,
-        );
-        await this.baseContext.initialize();
-        // Loop continues to retry immediately
+        // Loop continues to recreate immediately
       }
     }
   }
@@ -247,45 +250,54 @@ export default class SERPScraper {
       try {
         if (!this.chromeContext) {
           if (!this.browser) throw new Error("Browser not available");
+          const useIncognito = !this.onlyGoogle; // default mode if onlyGoogle, else incognito
           this.chromeContext = new ChromeSERPContext(
             this.browser,
             this.baseContext
               ? Math.max(1, Math.floor(this.maxTabs / 2))
               : this.maxTabs,
             this.maxQueueSize,
+            useIncognito,
           );
-          await this.chromeContext.initialize();
+          const ok = await this.chromeContext.initialize();
+          if (!ok) {
+            if (this.onlyGoogle) {
+              // Per requirement: on init failure while onlyGoogle, restart the browser
+              throw new Error("Chrome context init failed (only Google mode)");
+            }
+            // otherwise let loop close and recreate
+            throw new Error("Chrome context init failed");
+          }
         }
 
         const { promise } = await this.chromeContext.search(
-          "ping",
+          "minecraft",
           SearchEngine.GOOGLE,
         );
         await promise;
 
         this.chromeReady = true;
-        console.log("Chrome context search test passed.");
+        console.log(
+          `Chrome context search test passed (${this.onlyGoogle ? "default" : "incognito"} mode).`,
+        );
         return;
       } catch (err) {
         this.chromeReady = false;
+
+        // If onlyGoogle is true and we fail initialization or test, we DO NOT keep a broken context around.
+        // We recreate the Chrome context and retry. If recreation keeps failing at init time, launchBrowser will restart.
         console.warn(
           "Chrome context search test failed. Recreating Chrome context...",
         );
+
         try {
           await this.chromeContext?.close();
         } catch {}
         this.chromeContext = null;
 
-        if (!this.browser) throw new Error("Browser not available");
-        this.chromeContext = new ChromeSERPContext(
-          this.browser,
-          this.baseContext
-            ? Math.max(1, Math.floor(this.maxTabs / 2))
-            : this.maxTabs,
-          this.maxQueueSize,
-        );
-        await this.chromeContext.initialize();
-        // Loop continues to retry immediately
+        // If onlyGoogle and the last failure was at initialization time,
+        // initializeContexts() already threw and launchBrowser() will restart.
+        // Here, during test loop, we just recreate the context and keep retrying.
       }
     }
   }
@@ -312,14 +324,13 @@ export default class SERPScraper {
     }
     if (this.onlyBase && searchEngine === SearchEngine.GOOGLE) {
       if (!this.baseContext) throw new Error("Base context is not available");
-      // Await base readiness if needed
       if (!this.baseReady && this.baseReadyPromise) {
         await this.baseReadyPromise;
       }
       return this.baseContext.search(query, searchEngine);
     }
 
-    // Route: Google -> Chrome context, wait for Chrome readiness
+    // Route Google -> Chrome
     if (searchEngine === SearchEngine.GOOGLE && this.chromeContext) {
       if (!this.chromeReady && this.chromeReadyPromise) {
         await this.chromeReadyPromise;
@@ -327,7 +338,7 @@ export default class SERPScraper {
       return this.chromeContext.search(query, searchEngine);
     }
 
-    // Route others to Base, wait for Base readiness
+    // Route others -> Base
     if (this.baseContext) {
       if (!this.baseReady && this.baseReadyPromise) {
         await this.baseReadyPromise;

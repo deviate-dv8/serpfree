@@ -10,7 +10,9 @@ import PreprocessService from "./services/preprocessService";
 
 export class ChromeSERPContext extends PreprocessService {
   private browser: Browser;
+  private useIncognito: boolean;
   private incognitoContext: BrowserContext | null = null;
+
   private tabPool: TabPool[] = [];
   private taskQueue: SearchTask[] = [];
   private maxTabs: number;
@@ -19,11 +21,17 @@ export class ChromeSERPContext extends PreprocessService {
   private initComplete: boolean = false;
   private tabIdleTimeout: number = 60000;
 
-  constructor(browser: Browser, maxTabs: number, maxQueueSize: number) {
+  constructor(
+    browser: Browser,
+    maxTabs: number,
+    maxQueueSize: number,
+    useIncognito: boolean = true,
+  ) {
     super();
     this.browser = browser;
     this.maxTabs = Math.max(1, maxTabs);
     this.maxQueueSize = maxQueueSize;
+    this.useIncognito = useIncognito;
   }
 
   get ready(): boolean {
@@ -32,16 +40,20 @@ export class ChromeSERPContext extends PreprocessService {
 
   async initialize(): Promise<boolean> {
     try {
-      // Isolated incognito context for Google
-      this.incognitoContext = await this.browser.createBrowserContext();
+      let page: Page;
 
-      const page = await this.incognitoContext.newPage();
+      if (this.useIncognito) {
+        this.incognitoContext = await this.browser.createBrowserContext();
+        page = await this.incognitoContext.newPage();
+      } else {
+        page = await this.browser.newPage();
+      }
 
       if (process.env.ENABLE_RESOURCE_BLOCKING === "true") {
         await this.setupRequestBlocking(page);
       }
 
-      // Warmup is best-effort
+      // Best-effort warmup
       try {
         await page.goto("https://www.google.com", {
           waitUntil: "load",
@@ -57,7 +69,9 @@ export class ChromeSERPContext extends PreprocessService {
       });
 
       this.initComplete = true;
-      console.log("Chrome SERP context initialized successfully");
+      console.log(
+        `Chrome SERP context initialized successfully (${this.useIncognito ? "incognito" : "default"})`,
+      );
       return true;
     } catch (error) {
       console.error("Failed to initialize Chrome context:", error);
@@ -71,24 +85,29 @@ export class ChromeSERPContext extends PreprocessService {
     if (availableTab) return availableTab;
 
     if (this.tabPool.length < this.maxTabs) {
-      if (!this.incognitoContext)
-        throw new Error("Incognito context not initialized");
-      const page = await this.incognitoContext.newPage();
+      try {
+        const page = this.useIncognito
+          ? await this.incognitoContext!.newPage()
+          : await this.browser.newPage();
 
-      if (process.env.ENABLE_RESOURCE_BLOCKING === "true") {
-        await this.setupRequestBlocking(page);
+        if (process.env.ENABLE_RESOURCE_BLOCKING === "true") {
+          await this.setupRequestBlocking(page);
+        }
+
+        const newTab: TabPool = {
+          page,
+          busy: false,
+          lastUsed: Date.now(),
+          contextType: "google",
+        };
+
+        this.tabPool.push(newTab);
+        console.log(`Created new Chrome tab. Total: ${this.tabPool.length}`);
+        return newTab;
+      } catch (error) {
+        console.error("Error creating new Chrome tab:", error);
+        throw error;
       }
-
-      const newTab: TabPool = {
-        page,
-        busy: false,
-        lastUsed: Date.now(),
-        contextType: "google",
-      };
-
-      this.tabPool.push(newTab);
-      console.log(`Created new Chrome tab. Total: ${this.tabPool.length}`);
-      return newTab;
     }
 
     return new Promise((resolve) => {
@@ -157,7 +176,9 @@ export class ChromeSERPContext extends PreprocessService {
     }
 
     const abortController = new AbortController();
-    const taskId = `chrome_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const taskId = `chrome_${Date.now()}_${Math.random()
+      .toString(36)
+      .substr(2, 9)}`;
 
     const searchPromise = new Promise<SearchResult[]>((resolve, reject) => {
       const task: SearchTask = {
@@ -404,30 +425,32 @@ export class ChromeSERPContext extends PreprocessService {
       busyTabs: this.tabPool.filter((tab) => tab.busy).length,
       maxTabs: this.maxTabs,
       maxQueueSize: this.maxQueueSize,
+      mode: this.useIncognito ? "incognito" : "default",
     };
   }
 
   async close(): Promise<void> {
-    // Cancel all requests
     this.cancelAllRequests();
 
-    // Close all tabs
     for (const tab of this.tabPool) {
       try {
-        if (!tab.page.isClosed()) await tab.page.close();
+        if (!tab.page.isClosed()) {
+          await tab.page.close();
+        }
       } catch (error) {
         console.error("Error closing Chrome tab during shutdown:", error);
       }
     }
     this.tabPool = [];
 
-    // Close incognito context
-    try {
-      await this.incognitoContext?.close();
-    } catch (error) {
-      console.error("Error closing Chrome incognito context:", error);
-    } finally {
-      this.incognitoContext = null;
+    if (this.useIncognito) {
+      try {
+        await this.incognitoContext?.close();
+      } catch (error) {
+        console.error("Error closing Chrome incognito context:", error);
+      } finally {
+        this.incognitoContext = null;
+      }
     }
 
     this.initComplete = false;
