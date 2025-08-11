@@ -21,17 +21,22 @@ export class ChromeSERPContext extends PreprocessService {
   private initComplete: boolean = false;
   private tabIdleTimeout: number = 60000;
 
+  // Called on critical failures (e.g., captcha) when onlyGoogle mode needs a full browser restart
+  private onCritical?: (reason: string) => void;
+
   constructor(
     browser: Browser,
     maxTabs: number,
     maxQueueSize: number,
     useIncognito: boolean = true,
+    onCritical?: (reason: string) => void,
   ) {
     super();
     this.browser = browser;
     this.maxTabs = Math.max(1, maxTabs);
     this.maxQueueSize = maxQueueSize;
     this.useIncognito = useIncognito;
+    this.onCritical = onCritical;
   }
 
   get ready(): boolean {
@@ -53,13 +58,14 @@ export class ChromeSERPContext extends PreprocessService {
         await this.setupRequestBlocking(page);
       }
 
-      // Best-effort warmup
       try {
         await page.goto("https://www.google.com", {
           waitUntil: "load",
           timeout: 20000,
         });
-      } catch {}
+      } catch {
+        // best-effort warmup
+      }
 
       this.tabPool.push({
         page,
@@ -296,6 +302,7 @@ export class ChromeSERPContext extends PreprocessService {
         throw new Error("Request cancelled");
       }
 
+      // preprocessPageResult will throw Error("Captcha detected") when captcha is present
       const results = await this.preprocessPageResult(
         tab.page,
         task.searchEngine,
@@ -325,6 +332,13 @@ export class ChromeSERPContext extends PreprocessService {
           bandwidthMetrics,
         );
       }
+
+      // If preprocessPageResult threw "Captcha detected", signal a critical event
+      const msg = (error as Error)?.message || "";
+      if (/captcha detected/i.test(msg)) {
+        this.onCritical?.("captcha_detected");
+      }
+
       if (!task.cancelled) task.reject(error as Error);
     }
   }
