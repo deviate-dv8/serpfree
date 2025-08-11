@@ -8,47 +8,45 @@ import {
 } from ".";
 import PreprocessService from "./services/preprocessService";
 
-const MAX_RETRIES = 2;
-
-export class GoogleSERPContext extends PreprocessService {
+export class ChromeSERPContext extends PreprocessService {
   private browser: Browser;
-  private context: BrowserContext | null = null;
+  private incognitoContext: BrowserContext | null = null;
   private tabPool: TabPool[] = [];
   private taskQueue: SearchTask[] = [];
   private maxTabs: number;
   private maxQueueSize: number;
   private processingQueue: boolean = false;
-  private contextResetInProgress: boolean = false;
-  private pendingRetryTasks: SearchTask[] = [];
   private initComplete: boolean = false;
+  private tabIdleTimeout: number = 60000;
 
   constructor(browser: Browser, maxTabs: number, maxQueueSize: number) {
     super();
     this.browser = browser;
-    this.maxTabs = maxTabs;
+    this.maxTabs = Math.max(1, maxTabs);
     this.maxQueueSize = maxQueueSize;
   }
 
-  async initialize() {
+  async initialize(): Promise<boolean> {
     try {
-      // Create a browser context specifically for Google searches
-      this.context = await this.browser.createBrowserContext();
+      // Isolated incognito context for Google
+      this.incognitoContext = await this.browser.createBrowserContext();
 
-      // Create an initial tab that we'll keep around for the context lifetime
-      const page = await this.context.newPage();
+      const page = await this.incognitoContext.newPage();
 
-      // Navigate to Google homepage to set up cookies
-      await page.goto("https://www.google.com", {
-        waitUntil: "networkidle2",
-        timeout: 30000,
-      });
-
-      // Set up resource blocking if enabled
       if (process.env.ENABLE_RESOURCE_BLOCKING === "true") {
         await this.setupRequestBlocking(page);
       }
 
-      // Add to tab pool
+      // Optionally warm up Google (can be commented out if undesired)
+      try {
+        await page.goto("https://www.google.com", {
+          waitUntil: "load",
+          timeout: 20000,
+        });
+      } catch {
+        // Best-effort warmup; do not fail initialization
+      }
+
       this.tabPool.push({
         page,
         busy: false,
@@ -56,97 +54,24 @@ export class GoogleSERPContext extends PreprocessService {
         contextType: "google",
       });
 
-      console.log("Google SERP context initialized successfully");
+      console.log("Chrome SERP context initialized successfully");
       this.initComplete = true;
       return true;
     } catch (error) {
-      console.error("Failed to initialize Google context:", error);
+      console.error("Failed to initialize Chrome context:", error);
       return false;
     }
   }
 
-  async resetContext() {
-    if (this.contextResetInProgress) return;
-    this.contextResetInProgress = true;
-
-    try {
-      console.log("Resetting Google context...");
-
-      // Close all Google tabs
-      for (const tab of this.tabPool) {
-        try {
-          if (!tab.page.isClosed()) {
-            await tab.page.close();
-          }
-        } catch (error) {
-          console.error("Error closing Google tab:", error);
-        }
-      }
-      this.tabPool = [];
-
-      // Close and recreate context
-      if (this.context) {
-        await this.context.close();
-      }
-      this.context = await this.browser.createBrowserContext();
-
-      // Create new initial tab
-      const page = await this.context.newPage();
-      await page.goto("https://www.google.com", {
-        waitUntil: "networkidle2",
-        timeout: 30000,
-      });
-
-      if (process.env.ENABLE_RESOURCE_BLOCKING === "true") {
-        await this.setupRequestBlocking(page);
-      }
-
-      this.tabPool.push({
-        page,
-        busy: false,
-        lastUsed: Date.now(),
-        contextType: "google",
-      });
-
-      // Queue pending tasks for retry
-      const pendingTasks = [...this.pendingRetryTasks];
-      this.pendingRetryTasks = [];
-
-      for (const task of pendingTasks) {
-        if (!task.cancelled) {
-          this.taskQueue.unshift(task); // Add to front of queue for priority
-        }
-      }
-
-      console.log("Google context reset complete");
-    } catch (error) {
-      console.error("Error resetting Google context:", error);
-    } finally {
-      this.contextResetInProgress = false;
-      this.processQueue(); // Resume processing
-    }
-  }
-
-  async getAvailableTab(): Promise<TabPool> {
-    if (!this.initComplete) {
-      throw new Error("Google context not initialized");
-    }
-
-    // Look for an available tab first
+  private async getAvailableTab(): Promise<TabPool> {
     const availableTab = this.tabPool.find((tab) => !tab.busy);
+    if (availableTab) return availableTab;
 
-    if (availableTab) {
-      return availableTab;
-    }
-
-    // Create a new tab if under the limit
     if (this.tabPool.length < this.maxTabs) {
-      if (!this.context) {
-        throw new Error("Google context not initialized");
-      }
-
       try {
-        const page = await this.context.newPage();
+        if (!this.incognitoContext)
+          throw new Error("Incognito context not initialized");
+        const page = await this.incognitoContext.newPage();
 
         if (process.env.ENABLE_RESOURCE_BLOCKING === "true") {
           await this.setupRequestBlocking(page);
@@ -160,68 +85,58 @@ export class GoogleSERPContext extends PreprocessService {
         };
 
         this.tabPool.push(newTab);
-        console.log(`Created new Google tab. Total: ${this.tabPool.length}`);
+        console.log(`Created new Chrome tab. Total: ${this.tabPool.length}`);
         return newTab;
       } catch (error) {
-        console.error("Error creating new Google tab:", error);
+        console.error("Error creating new Chrome tab:", error);
         throw error;
       }
     }
 
-    // If we reach here, we need to wait for a tab
     return new Promise((resolve) => {
       const checkAvailability = () => {
         const tab = this.tabPool.find((t) => !t.busy);
-        if (tab) {
-          resolve(tab);
-        } else {
-          setTimeout(checkAvailability, 100);
-        }
+        if (tab) resolve(tab);
+        else setTimeout(checkAvailability, 100);
       };
       checkAvailability();
     });
   }
 
-  private async setupRequestBlocking(page: Page) {
+  private async setupRequestBlocking(page: Page): Promise<void> {
     const isTracker =
       /(beacon|track|analytics|pixel|gtm|tagmanager|doubleclick|gstatic|xjs)/i;
     await page.setRequestInterception(true);
 
     page.on("request", (request) => {
       const t = request.resourceType();
-      if (t === "document") {
+      if (t === "document") request.continue();
+      else if (t === "script" && !isTracker.test(request.url()))
         request.continue();
-      } else if (t === "script" && !isTracker.test(request.url())) {
-        request.continue();
-      } else {
-        request.abort();
-      }
+      else request.abort();
     });
   }
 
-  cleanupIdleTabs() {
+  cleanupIdleTabs(): void {
     const now = Date.now();
     const idleTabs = this.tabPool.filter(
-      (tab) => !tab.busy && now - tab.lastUsed > 60000,
+      (tab) => !tab.busy && now - tab.lastUsed > this.tabIdleTimeout,
     );
 
-    // Keep at least one tab
     if (this.tabPool.length > 1 && idleTabs.length > 0) {
       const tabsToClose = idleTabs.slice(0, idleTabs.length - 1);
 
       tabsToClose.forEach(async (tab) => {
         try {
-          if (!tab.page.isClosed()) {
-            await tab.page.close();
-          }
+          if (!tab.page.isClosed()) await tab.page.close();
           this.tabPool = this.tabPool.filter((t) => t !== tab);
         } catch (error) {
-          console.error("Error closing idle Google tab:", error);
+          console.error("Error closing idle Chrome tab:", error);
         }
       });
 
       console.log(
-        `Closed ${tabsToClose.length} idle Google tabs. Remaining: ${this.tabPool.length}`,
+        `Closed ${tabsToClose.length} idle Chrome tabs. Remaining: ${this.tabPool.length}`,
       );
     }
   }
@@ -231,17 +146,21 @@ export class GoogleSERPContext extends PreprocessService {
     searchEngine: SearchEngine,
   ): Promise<{ promise: Promise<SearchResult[]>; cancel: () => void }> {
     if (!this.initComplete) {
-      throw new Error("Google context not fully initialized");
+      throw new Error("Chrome context not fully initialized");
+    }
+
+    if (searchEngine !== SearchEngine.GOOGLE) {
+      throw new Error("ChromeSERPContext only handles Google searches");
     }
 
     if (this.taskQueue.length >= this.maxQueueSize) {
       throw new Error(
-        `Google queue is full. Maximum size: ${this.maxQueueSize}`,
+        `Chrome queue is full. Maximum size: ${this.maxQueueSize}`,
       );
     }
 
     const abortController = new AbortController();
-    const taskId = `google_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const taskId = `chrome_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
     const searchPromise = new Promise<SearchResult[]>((resolve, reject) => {
       const task: SearchTask = {
@@ -257,7 +176,7 @@ export class GoogleSERPContext extends PreprocessService {
 
       this.taskQueue.push(task);
       console.log(
-        `Added Google task ${taskId} to queue. Queue: ${this.taskQueue.length}`,
+        `Added Chrome task ${taskId} to queue. Queue: ${this.taskQueue.length}`,
       );
       this.processQueue();
     });
@@ -267,33 +186,30 @@ export class GoogleSERPContext extends PreprocessService {
       if (task) {
         task.cancelled = true;
         task.abortController.abort();
-        console.log(`Cancelled Google task ${taskId}`);
+        this.taskQueue = this.taskQueue.filter((t) => t !== task);
+        console.log(`Cancelled Chrome task ${taskId}`);
       }
     };
 
     return { promise: searchPromise, cancel };
   }
 
-  private async processQueue() {
-    if (
-      this.processingQueue ||
-      this.taskQueue.length === 0 ||
-      this.contextResetInProgress
-    ) {
-      return;
-    }
+  async searchSimple(query: string): Promise<SearchResult[]> {
+    const { promise } = await this.search(query, SearchEngine.GOOGLE);
+    return promise;
+  }
 
+  private async processQueue(): Promise<void> {
+    if (this.processingQueue || this.taskQueue.length === 0) return;
     this.processingQueue = true;
 
     while (this.taskQueue.length > 0) {
-      // Remove cancelled tasks
       const validTasks = this.taskQueue.filter((task) => !task.cancelled);
       const cancelledTasks = this.taskQueue.filter((task) => task.cancelled);
 
-      cancelledTasks.forEach((task) => {
-        task.reject(new Error("Request cancelled"));
-      });
-
+      cancelledTasks.forEach((task) =>
+        task.reject(new Error("Request cancelled")),
+      );
       this.taskQueue = validTasks;
       if (this.taskQueue.length === 0) break;
 
@@ -314,7 +230,7 @@ export class GoogleSERPContext extends PreprocessService {
         tab.lastUsed = Date.now();
 
         console.log(
-          `Processing Google task ${task.id}. Queue: ${this.taskQueue.length}`,
+          `Processing Chrome task ${task.id}. Queue: ${this.taskQueue.length}`,
         );
 
         this.executeSearch(tab, task).finally(() => {
@@ -322,18 +238,15 @@ export class GoogleSERPContext extends PreprocessService {
           tab.lastUsed = Date.now();
         });
       } catch (error) {
-        if (!task.cancelled) {
-          task.reject(error as Error);
-        }
+        if (!task.cancelled) task.reject(error as Error);
       }
     }
 
     this.processingQueue = false;
   }
 
-  private async executeSearch(tab: TabPool, task: SearchTask) {
+  private async executeSearch(tab: TabPool, task: SearchTask): Promise<void> {
     let bandwidthMetrics: BandwidthMetrics | null = null;
-    let captchaDetected = false;
 
     try {
       if (task.cancelled || task.abortController.signal.aborted) {
@@ -350,7 +263,8 @@ export class GoogleSERPContext extends PreprocessService {
         throw new Error("Request cancelled");
       }
 
-      tab.page.setDefaultNavigationTimeout(60000); // Google search can take longer
+      // Longer timeout for Google
+      tab.page.setDefaultNavigationTimeout(60000);
 
       await Promise.race([
         tab.page.goto(url, { waitUntil: "load" }),
@@ -363,12 +277,6 @@ export class GoogleSERPContext extends PreprocessService {
 
       if (task.cancelled || task.abortController.signal.aborted) {
         throw new Error("Request cancelled");
-      }
-
-      captchaDetected = await this.detectCaptcha(tab.page);
-      if (captchaDetected) {
-        console.log(`Captcha detected in Google task ${task.id}`);
-        throw new Error("Google captcha detected");
       }
 
       const results = await this.preprocessPageResult(
@@ -400,50 +308,7 @@ export class GoogleSERPContext extends PreprocessService {
           bandwidthMetrics,
         );
       }
-
-      if (captchaDetected) {
-        // Handle captcha by retrying after context reset
-        if (task.retries < MAX_RETRIES) {
-          task.retries++;
-          this.pendingRetryTasks.push(task);
-          console.log(
-            `Queued Google task ${task.id} for retry (attempt ${task.retries})`,
-          );
-
-          // Trigger context reset if not already in progress
-          if (!this.contextResetInProgress) {
-            this.resetContext();
-          }
-        } else {
-          task.reject(new Error("Max retries reached for Google search"));
-        }
-      } else if (!task.cancelled) {
-        task.reject(error as Error);
-      }
-    }
-  }
-
-  private async detectCaptcha(page: Page): Promise<boolean> {
-    try {
-      const captchaSelectors = [
-        "#captcha",
-        ".g-recaptcha",
-        'iframe[src*="recaptcha"]',
-        'div[class*="captcha"]',
-        'div[class*="Captcha"]',
-      ];
-
-      for (const selector of captchaSelectors) {
-        if (await page.$(selector)) return true;
-      }
-
-      return await page.evaluate(() => {
-        const text = document.body.innerText;
-        return /captcha|verify you|not a robot/i.test(text);
-      });
-    } catch (error) {
-      console.error("Captcha detection error:", error);
-      return false;
+      if (!task.cancelled) task.reject(error as Error);
     }
   }
 
@@ -468,9 +333,7 @@ export class GoogleSERPContext extends PreprocessService {
       if (!["image", "font", "media"].includes(resourceType)) {
         metrics.requestCount++;
         const postData = request.postData();
-        if (postData) {
-          metrics.totalBytes += Buffer.byteLength(postData, "utf8");
-        }
+        if (postData) metrics.totalBytes += Buffer.byteLength(postData, "utf8");
       }
     });
 
@@ -488,12 +351,10 @@ export class GoogleSERPContext extends PreprocessService {
               const buffer = await response.buffer();
               metrics.totalBytes += buffer.length;
             } catch {
-              if (response.ok()) {
-                metrics.totalBytes += 1024;
-              }
+              if (response.ok()) metrics.totalBytes += 1024;
             }
           }
-        } catch (error) {}
+        } catch {}
       }
     });
 
@@ -505,14 +366,15 @@ export class GoogleSERPContext extends PreprocessService {
     query: string,
     searchEngine: SearchEngine,
     metrics: BandwidthMetrics,
-  ) {
+  ): void {
     metrics.endTime = Date.now();
     const duration = metrics.endTime - metrics.startTime;
     const totalKB = (metrics.totalBytes / 1024).toFixed(2);
     const totalMB = (metrics.totalBytes / (1024 * 1024)).toFixed(2);
 
-    console.log(`🔍 Google Search Bandwidth Report - Task ${taskId}`);
+    console.log(`🔍 Chrome Search Bandwidth Report - Task ${taskId}`);
     console.log(`   Query: "${query}"`);
+    console.log(`   Engine: ${searchEngine}`);
     console.log(`   Duration: ${duration}ms`);
     console.log(`   Total Bandwidth: ${totalKB} KB (${totalMB} MB)`);
     console.log(`   Total Bytes: ${metrics.totalBytes.toLocaleString()} bytes`);
@@ -522,16 +384,15 @@ export class GoogleSERPContext extends PreprocessService {
     console.log(`   ────────────────────────────────────────────────────`);
   }
 
-  cancelAllRequests() {
+  cancelAllRequests(): number {
     const cancelledCount = this.taskQueue.length;
     this.taskQueue.forEach((task) => {
       task.cancelled = true;
       task.abortController.abort();
-      task.reject(new Error("All Google requests cancelled"));
+      task.reject(new Error("All Chrome requests cancelled"));
     });
     this.taskQueue = [];
-    this.pendingRetryTasks = [];
-    console.log(`Cancelled ${cancelledCount} pending Google requests`);
+    console.log(`Cancelled ${cancelledCount} pending Chrome requests`);
     return cancelledCount;
   }
 
@@ -545,38 +406,33 @@ export class GoogleSERPContext extends PreprocessService {
       totalTabs: this.tabPool.length,
       busyTabs: this.tabPool.filter((tab) => tab.busy).length,
       maxTabs: this.maxTabs,
-      pendingRetries: this.pendingRetryTasks.length,
-      contextActive: !!this.context,
-      contextResetInProgress: this.contextResetInProgress,
+      maxQueueSize: this.maxQueueSize,
     };
   }
 
-  async close() {
+  async close(): Promise<void> {
     // Cancel all requests
     this.cancelAllRequests();
 
     // Close all tabs
     for (const tab of this.tabPool) {
       try {
-        if (!tab.page.isClosed()) {
-          await tab.page.close();
-        }
+        if (!tab.page.isClosed()) await tab.page.close();
       } catch (error) {
-        console.error("Error closing Google tab during shutdown:", error);
+        console.error("Error closing Chrome tab during shutdown:", error);
       }
     }
     this.tabPool = [];
 
-    // Close the context
-    if (this.context) {
-      try {
-        await this.context.close();
-        this.context = null;
-      } catch (error) {
-        console.error("Error closing Google context:", error);
-      }
+    // Close incognito context
+    try {
+      await this.incognitoContext?.close();
+    } catch (error) {
+      console.error("Error closing Chrome incognito context:", error);
+    } finally {
+      this.incognitoContext = null;
     }
 
-    console.log("Google context closed successfully");
+    console.log("Chrome context closed successfully");
   }
 }

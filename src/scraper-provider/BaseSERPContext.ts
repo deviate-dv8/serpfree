@@ -25,17 +25,14 @@ export class BaseSERPContext extends PreprocessService {
     this.maxQueueSize = maxQueueSize;
   }
 
-  async initialize(): Promise<boolean> {
+  async initialize() {
     try {
-      // Create initial tab for the base context
       const page = await this.browser.newPage();
 
-      // Set up resource blocking if enabled
       if (process.env.ENABLE_RESOURCE_BLOCKING === "true") {
         await this.setupRequestBlocking(page);
       }
 
-      // Add to tab pool
       this.tabPool.push({
         page,
         busy: false,
@@ -53,14 +50,9 @@ export class BaseSERPContext extends PreprocessService {
   }
 
   private async getAvailableTab(): Promise<TabPool> {
-    // Look for an available tab first
     const availableTab = this.tabPool.find((tab) => !tab.busy);
+    if (availableTab) return availableTab;
 
-    if (availableTab) {
-      return availableTab;
-    }
-
-    // Create a new tab if under the limit
     if (this.tabPool.length < this.maxTabs) {
       try {
         const page = await this.browser.newPage();
@@ -85,21 +77,17 @@ export class BaseSERPContext extends PreprocessService {
       }
     }
 
-    // If we reach here, we need to wait for a tab
     return new Promise((resolve) => {
       const checkAvailability = () => {
         const tab = this.tabPool.find((t) => !t.busy);
-        if (tab) {
-          resolve(tab);
-        } else {
-          setTimeout(checkAvailability, 100);
-        }
+        if (tab) resolve(tab);
+        else setTimeout(checkAvailability, 100);
       };
       checkAvailability();
     });
   }
 
-  private async setupRequestBlocking(page: Page): Promise<void> {
+  private async setupRequestBlocking(page: Page) {
     const isTracker =
       /(beacon|track|analytics|pixel|gtm|tagmanager|doubleclick|gstatic|xjs)/i;
     await page.setRequestInterception(true);
@@ -116,13 +104,12 @@ export class BaseSERPContext extends PreprocessService {
     });
   }
 
-  cleanupIdleTabs(): void {
+  cleanupIdleTabs() {
     const now = Date.now();
     const idleTabs = this.tabPool.filter(
       (tab) => !tab.busy && now - tab.lastUsed > this.tabIdleTimeout,
     );
 
-    // Keep at least one tab
     if (this.tabPool.length > 1 && idleTabs.length > 0) {
       const tabsToClose = idleTabs.slice(0, idleTabs.length - 1);
 
@@ -198,7 +185,7 @@ export class BaseSERPContext extends PreprocessService {
     return promise;
   }
 
-  private async processQueue(): Promise<void> {
+  private async processQueue() {
     if (this.processingQueue || this.taskQueue.length === 0) {
       return;
     }
@@ -206,7 +193,6 @@ export class BaseSERPContext extends PreprocessService {
     this.processingQueue = true;
 
     while (this.taskQueue.length > 0) {
-      // Remove cancelled tasks
       const validTasks = this.taskQueue.filter((task) => !task.cancelled);
       const cancelledTasks = this.taskQueue.filter((task) => task.cancelled);
 
@@ -251,7 +237,7 @@ export class BaseSERPContext extends PreprocessService {
     this.processingQueue = false;
   }
 
-  private async executeSearch(tab: TabPool, task: SearchTask): Promise<void> {
+  private async executeSearch(tab: TabPool, task: SearchTask) {
     let bandwidthMetrics: BandwidthMetrics | null = null;
 
     try {
@@ -378,7 +364,7 @@ export class BaseSERPContext extends PreprocessService {
     query: string,
     searchEngine: SearchEngine,
     metrics: BandwidthMetrics,
-  ): void {
+  ) {
     metrics.endTime = Date.now();
     const duration = metrics.endTime - metrics.startTime;
     const totalKB = (metrics.totalBytes / 1024).toFixed(2);
@@ -393,13 +379,10 @@ export class BaseSERPContext extends PreprocessService {
     console.log(`   Requests: ${metrics.requestCount}`);
     console.log(`   Responses: ${metrics.responseCount}`);
     console.log(`   Blocked Requests: ${metrics.blockedRequests}`);
-    console.log(
-      `   Avg per request: ${(metrics.totalBytes / Math.max(metrics.responseCount, 1) / 1024).toFixed(2)} KB`,
-    );
     console.log(`   ────────────────────────────────────────────────────`);
   }
 
-  cancelAllRequests(): number {
+  cancelAllRequests() {
     const cancelledCount = this.taskQueue.length;
     this.taskQueue.forEach((task) => {
       task.cancelled = true;
@@ -409,26 +392,6 @@ export class BaseSERPContext extends PreprocessService {
     this.taskQueue = [];
     console.log(`Cancelled ${cancelledCount} pending Base requests`);
     return cancelledCount;
-  }
-
-  cancelRequestsByEngine(searchEngine: SearchEngine): number {
-    const tasksToCancel = this.taskQueue.filter(
-      (task) => task.searchEngine === searchEngine,
-    );
-    tasksToCancel.forEach((task) => {
-      task.cancelled = true;
-      task.abortController.abort();
-      task.reject(new Error(`Requests for ${searchEngine} cancelled`));
-    });
-
-    this.taskQueue = this.taskQueue.filter(
-      (task) => task.searchEngine !== searchEngine,
-    );
-
-    console.log(
-      `Cancelled ${tasksToCancel.length} requests for ${searchEngine}`,
-    );
-    return tasksToCancel.length;
   }
 
   getStatus() {
@@ -445,11 +408,9 @@ export class BaseSERPContext extends PreprocessService {
     };
   }
 
-  async close(): Promise<void> {
-    // Cancel all requests
+  async close() {
     this.cancelAllRequests();
 
-    // Close all tabs
     for (const tab of this.tabPool) {
       try {
         if (!tab.page.isClosed()) {
