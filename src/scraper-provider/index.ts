@@ -247,7 +247,7 @@ export default class SERPScraper {
 
         const { promise } = await this.baseContext.search(
           "ping",
-          SearchEngine.BING,
+          SearchEngine.DUCKDUCKGO,
         );
         await promise;
 
