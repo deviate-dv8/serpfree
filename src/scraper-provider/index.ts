@@ -370,6 +370,13 @@ export default class SERPScraper {
       ? this.chromeContext.getStatus()
       : null;
 
+    // Compute overall readiness based on configuration
+    const overallReady = this.onlyGoogle
+      ? this.chromeReady
+      : this.onlyBase
+        ? this.baseReady
+        : this.baseReady || this.chromeReady;
+
     return {
       browserActive: !!this.browser,
       enableChromeContext: this.enableChromeContext,
@@ -377,6 +384,7 @@ export default class SERPScraper {
       onlyBase: this.onlyBase,
       baseReady: this.baseReady,
       chromeReady: this.chromeReady,
+      overallReady,
       baseContextActive: !!this.baseContext,
       chromeContextActive: !!this.chromeContext,
       base: baseStatus,
@@ -384,6 +392,10 @@ export default class SERPScraper {
     };
   }
 
+  isReady(): boolean {
+    const s = this.getStatus();
+    return s.overallReady;
+  }
   async closeBrowser(): Promise<void> {
     if (this.cleanUpIntervalId) {
       clearInterval(this.cleanUpIntervalId);

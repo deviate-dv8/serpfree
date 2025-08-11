@@ -41,7 +41,7 @@ async function search(req: Request, res: Response) {
   if (!scraper) {
     return res.status(500).json({ message: "Scraper not initialized" });
   }
-  if (!scraper.getStatus().baseReady || !scraper.getStatus().chromeReady) {
+  if (!scraper.isReady()) {
     return res.status(503).json({ message: "Scraper is not ready" });
   }
   const { query, provider } = parsed.data;
