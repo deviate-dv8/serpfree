@@ -145,7 +145,9 @@ export class BaseSERPContext extends PreprocessService {
     if (this.taskQueue.length >= this.maxQueueSize) {
       throw new Error(`Base queue is full. Maximum size: ${this.maxQueueSize}`);
     }
-
+    if (searchEngine === SearchEngine.GOOGLE) {
+      throw new Error("Base context doesn't support Google");
+    }
     const abortController = new AbortController();
     const taskId = `base_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -273,7 +275,6 @@ export class BaseSERPContext extends PreprocessService {
       if (task.cancelled || task.abortController.signal.aborted) {
         throw new Error("Request cancelled");
       }
-
       const results = await this.preprocessPageResult(
         tab.page,
         task.searchEngine,
