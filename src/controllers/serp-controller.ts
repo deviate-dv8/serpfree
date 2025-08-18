@@ -98,6 +98,7 @@ async function search(req: Request, res: Response) {
       );
       return res.json({
         success: true,
+        provider: provider,
         results,
         requestId,
       });
@@ -136,6 +137,7 @@ async function search(req: Request, res: Response) {
 async function testSearch(req: Request, res: Response) {
   return res.json({
     success: true,
+    provider: "google",
     results: [
       {
         title: "The 5 Most Popular Node.js Web Frameworks in 2025",
