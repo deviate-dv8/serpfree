@@ -3,6 +3,7 @@ import express from "express";
 import SERPScraper from "./scraper-provider";
 import routes from "./routes";
 import si from "systeminformation";
+import morgan from "morgan";
 
 // Initialize
 dotenv.config();
@@ -14,6 +15,7 @@ const PORT = 3000;
 app.use(express.static("public"));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(morgan("combined"));
 
 async function logUsage() {
   const [mem, cpu] = await Promise.all([si.mem(), si.currentLoad()]);
@@ -28,7 +30,14 @@ app.get("/", (req, res) => {
 });
 app.use("/api", routes);
 app.listen(PORT, () => {
-  scraper = new SERPScraper(parseInt(process.env.TAB_LIMIT as string) || 1000);
+  const TEST_MODE = process.env.TEST_MODE;
+  if (TEST_MODE !== "true") {
+    scraper = new SERPScraper(
+      parseInt(process.env.TAB_LIMIT as string) || 1000,
+    );
+  } else {
+    console.log("TEST MODE Enabled");
+  }
   console.log("⚡️[server]: Server is running at http://localhost:" + PORT);
   const PROXY_HOST = process.env.PROXY_HOST;
   const PROXY_PORT = process.env.PROXY_PORT;

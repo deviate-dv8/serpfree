@@ -12,6 +12,7 @@
     "@ulixee/hero": "^2.0.0-alpha.33",
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
+    "morgan": "^1.10.1",
     "puppeteer": "^24.15.0",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-anonymize-ua": "^2.4.6",
@@ -23,6 +24,7 @@
   },
   "devDependencies": {
     "@types/express": "^5.0.3",
+    "@types/morgan": "^1.9.10",
     "@types/node": "^24.1.0",
     "concurrently": "^9.2.0",
     "nodemon": "^3.1.10",

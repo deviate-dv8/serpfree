@@ -2,6 +2,9 @@ import { Request, Response, Router } from "express";
 import z from "zod";
 import { scraper } from "../";
 import { SearchEngine } from "../scraper-provider";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const SearchSchema = z.object({
   query: z.string().min(1, "Query must not be empty"),
@@ -130,10 +133,88 @@ async function search(req: Request, res: Response) {
     });
   }
 }
-
+async function testSearch(req: Request, res: Response) {
+  return res.json({
+    success: true,
+    results: [
+      {
+        title: "The 5 Most Popular Node.js Web Frameworks in 2025",
+        link: "https://dev.to/leapcell/the-5-most-popular-nodejs-web-frameworks-in-2025-12po",
+        description:
+          "23 Mar 2025 — This article will introduce the top 5 Node.js backend frameworks in 2025, their features, and common use cases.",
+        rank: 1,
+        domain: "dev.to",
+      },
+      {
+        title: "Which framework in Node.js is most commonly used ...",
+        link: "https://www.reddit.com/r/node/comments/1gdcp89/which_framework_in_nodejs_is_most_commonly_used/",
+        description:
+          "Expressjs is by far the most commonly used still. Nestjs wraps express as well if you want to bring more convention / framework to a expressjs application.",
+        rank: 2,
+        domain: "www.reddit.com",
+      },
+      {
+        title: "Node Frameworks",
+        link: "https://www.geeksforgeeks.org/node-js/node-js-frameworks/",
+        description:
+          "5 days ago — A node framework is a workspace platform that supports the use of Node.js and which allows developers to use JavaScript for developing front end ...",
+        rank: 3,
+        domain: "www.geeksforgeeks.org",
+      },
+      {
+        title: "Best NodeJS frameworks for seamless backend development",
+        link: "https://ably.com/blog/best-nodejs-frameworks",
+        description:
+          "6 Nov 2023 — NodeJS is a JavaScript runtime environment for running JavaScript applications outside the browser environment.",
+        rank: 4,
+        domain: "ably.com",
+      },
+      {
+        title: "Express - Node.js web application framework",
+        link: "https://expressjs.com/",
+        description:
+          "Express is a minimal and flexible Node.js web application framework that provides a robust set of features for web and mobile applications.",
+        rank: 5,
+        domain: "expressjs.com",
+      },
+      {
+        title: "AdonisJS - A fully featured web framework for Node.js",
+        link: "https://adonisjs.com/",
+        description:
+          "AdonisJS is a TypeScript-first web framework for building web apps and API servers. It comes with support for testing, modern tooling, an ecosystem of official ...",
+        rank: 6,
+        domain: "adonisjs.com",
+      },
+      {
+        title: "12 Best Node.js Frameworks for App Development in 2024",
+        link: "https://www.simform.com/blog/best-nodejs-frameworks/",
+        description:
+          "14 Apr 2021 — Express.js, aka Express, tops the list of best Node.js frameworks. It has a minimalistic approach and seems to be a classic and straightforward ...",
+        rank: 7,
+        domain: "www.simform.com",
+      },
+      {
+        title: "NestJS - A progressive Node.js framework",
+        link: "https://nestjs.com/",
+        description:
+          "Hello, nest! A progressive Node.js framework for building efficient, reliable and scalable server-side applications. Documentation Source code ...",
+        rank: 8,
+        domain: "nestjs.com",
+      },
+      {
+        title: "Node.js Frameworks Roundup 2024 — Elysia / Hono / Nest ...",
+        link: "https://dev.to/encore/nodejs-frameworks-roundup-2024-elysia-hono-nest-encore-which-should-you-pick-19oj",
+        description:
+          "1 Nov 2024 — In this post, I'll walk you through the hottest frameworks in the Node.js ecosystem, breaking down the strengths, weaknesses, and best use cases for each one.",
+        rank: 9,
+        domain: "dev.to",
+      },
+    ],
+    requestId: "1755538986098_uet14",
+  });
+}
 // Setup routes
 const router = Router();
-
-router.post("/search", search);
+router.post("/search", process.env.TEST_MODE === "true" ? testSearch : search);
 
 export default router;
