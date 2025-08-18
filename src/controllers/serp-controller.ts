@@ -129,6 +129,7 @@ async function search(req: Request, res: Response) {
     return res.status(500).json({
       success: false,
       message: "Search failed",
+      query,
       error: error instanceof Error ? error.message : String(error),
       requestId,
     });
@@ -138,6 +139,7 @@ async function testSearch(req: Request, res: Response) {
   return res.json({
     success: true,
     provider: "google",
+    query: "Node.js frameworks",
     results: [
       {
         title: "The 5 Most Popular Node.js Web Frameworks in 2025",
