@@ -99,6 +99,7 @@ async function search(req: Request, res: Response) {
       return res.json({
         success: true,
         provider: provider,
+        query,
         results,
         requestId,
       });
@@ -129,6 +130,7 @@ async function search(req: Request, res: Response) {
     return res.status(500).json({
       success: false,
       message: "Search failed",
+      provider,
       query,
       error: error instanceof Error ? error.message : String(error),
       requestId,
