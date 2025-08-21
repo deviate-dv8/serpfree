@@ -6,7 +6,8 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "tsx watch src/index.ts"
+    "dev": "tsx watch src/index.ts",
+    "test":"cd tests/loadbalancing-test/ && ./k6 run ltest.js"
   },
   "dependencies": {
     "@ulixee/hero": "^2.0.0-alpha.33",
