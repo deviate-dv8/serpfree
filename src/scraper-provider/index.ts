@@ -115,35 +115,15 @@ export default class SERPScraper {
         args: [
           "--no-sandbox",
           "--disable-setuid-sandbox",
+          "--disable-blink-features=AutomationControlled",
           "--disable-dev-shm-usage",
           "--no-zygote",
-
-          "--memory-pressure-off",
-          "--max_old_space_size=512",
-          "--renderer-process-limit=1",
-          "--max-renderer-processes=1",
-
-          "--disable-background-timer-throttling",
-          "--disable-renderer-backgrounding",
-          "--disable-backgrounding-occluded-windows",
-          "--disable-features=TranslateUI,BlinkGenPropertyTrees",
-          "--disable-extensions",
-          "--disable-plugins",
-          "--disable-images",
-
-          "--disk-cache-size=52428800",
-          "--media-cache-size=52428800",
-          "--disable-background-networking",
-          "--disable-default-apps",
-
-          "--hide-scrollbars",
-          "--mute-audio",
-          "--no-first-run",
-          "--disable-notifications",
-
-          "--disable-blink-features=AutomationControlled",
           "--disable-software-rasterizer",
+          "--disable-extensions",
+          "--disable-background-networking",
           "--disable-renderer-backgrounding",
+          "--memory-pressure-off",
+          "--disable-notifications",
         ],
         turnstile: true,
         proxy: {
