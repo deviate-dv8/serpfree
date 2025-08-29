@@ -4,11 +4,12 @@ import SERPScraper from "./scraper-provider";
 import routes from "./routes";
 import si from "systeminformation";
 import morgan from "morgan";
+import SERPScraperOLD from "./scraper-provider/indexOld";
 
 // Initialize
 dotenv.config();
 const app = express();
-export let scraper: SERPScraper | null = null;
+export let scraper: SERPScraper | SERPScraperOLD | null = null;
 const PORT = 3000;
 
 // Middleware
@@ -32,9 +33,9 @@ app.use("/api", routes);
 app.listen(PORT, () => {
   const TEST_MODE = process.env.TEST_MODE;
   if (TEST_MODE !== "true") {
-    scraper = new SERPScraper(
-      parseInt(process.env.TAB_LIMIT as string) || 1000,
-    );
+    const SERPClass =
+      process.env.USE_OLD === "true" ? SERPScraperOLD : SERPScraper;
+    scraper = new SERPClass(parseInt(process.env.TAB_LIMIT as string) || 1000);
   } else {
     console.log("TEST MODE Enabled");
   }
