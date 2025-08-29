@@ -772,4 +772,7 @@ export default class SERPScraperOLD extends PreprocessService {
       console.error("Error closing browser:", error);
     }
   }
+  isReady(): boolean {
+    return this.ready;
+  }
 }
