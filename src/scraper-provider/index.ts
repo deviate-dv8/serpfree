@@ -306,14 +306,16 @@ export default class SERPScraper {
           "minecraft",
           SearchEngine.GOOGLE,
         );
-        const { promise: promise2 } = await this.chromeContext.search(
-          "max payne",
-          SearchEngine.GOOGLE,
-        );
         try {
           await promise;
-          await setTimeout(() => {}, 3000); // slight delay between requests
-          await promise2;
+          if (process.env.ENABLE_DOUBLE_CHECK_GOOGLE == "true") {
+            const { promise: promise2 } = await this.chromeContext.search(
+              "max payne",
+              SearchEngine.GOOGLE,
+            );
+            await setTimeout(() => {}, 3000); // slight delay between requests
+            await promise2;
+          }
           this.chromeReady = true;
           console.log(
             `Chrome context search test passed (${this.onlyGoogle ? "default" : "incognito"} mode).`,
