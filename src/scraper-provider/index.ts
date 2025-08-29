@@ -306,13 +306,21 @@ export default class SERPScraper {
           "minecraft",
           SearchEngine.GOOGLE,
         );
-        await promise;
-
-        this.chromeReady = true;
-        console.log(
-          `Chrome context search test passed (${this.onlyGoogle ? "default" : "incognito"} mode).`,
+        const { promise: promise2 } = await this.chromeContext.search(
+          "max payne",
+          SearchEngine.GOOGLE,
         );
-        return;
+        try {
+          await promise;
+          await promise2;
+          this.chromeReady = true;
+          console.log(
+            `Chrome context search test passed (${this.onlyGoogle ? "default" : "incognito"} mode).`,
+          );
+          return;
+        } catch (err) {
+          throw err;
+        }
       } catch (err) {
         this.chromeReady = false;
 
