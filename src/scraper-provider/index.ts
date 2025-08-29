@@ -312,6 +312,7 @@ export default class SERPScraper {
         );
         try {
           await promise;
+          await setTimeout(() => {}, 3000); // slight delay between requests
           await promise2;
           this.chromeReady = true;
           console.log(
