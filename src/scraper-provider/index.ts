@@ -124,6 +124,9 @@ export default class SERPScraper {
           "--disable-renderer-backgrounding",
           "--memory-pressure-off",
           "--disable-notifications",
+          "--disable-accelerated-2d-canvas", // Disable GPU-accelerated 2D canvas
+          "--disable-gpu", // Disable GPU usage entirely
+          "--renderer-process-limit=1",
         ],
         turnstile: true,
         proxy: {
